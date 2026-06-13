@@ -7,26 +7,24 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
-# 한글 폰트 설정 (스트림릿 클라우드/리눅스 환경 고려 및 로컬 에러 방지)
-plt.rcParams['font.family'] = 'NanumGothic' or 'Malgun Gothic'
+# 폰트 깨짐 방지: 클라우드 환경을 고려하여 기본 폰트(sans-serif) 지정 및 마이너스 깨짐 방지
+plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['axes.unicode_minus'] = False
 
 # -----------------------------------------------------------------------------
-# 1. 가상 데이터 로드 및 전처리 (선생님의 실제 데이터 로드 코드로 대체 가능)
+# 1. 가상 데이터 로드 및 전처리
 # -----------------------------------------------------------------------------
 @st.cache_data
 def load_data():
-    # 학습에 사용했던 데이터셋의 형태를 재현합니다. (예시 데이터)
     np.random.seed(42)
     data = {
-        '홈런': np.random.randint(0, 20, 50),
-        '타점': np.random.randint(10, 65, 50),
-        '득점': np.random.randint(10, 60, 50),
-        '팀': np.random.choice(['KIA', '삼성', 'LG', '두산', 'SSG', 'KT', 'NC', '한화', '롯데', '키움'], 50)
+        'HR': np.random.randint(0, 20, 50),
+        'RBI': np.random.randint(10, 65, 50),
+        'R': np.random.randint(10, 60, 50),
+        'Team': np.random.choice(['KIA', '삼성', 'LG', '두산', 'SSG', 'KT', 'NC', '한화', '롯데', '키움'], 50)
     }
     df = pd.DataFrame(data)
-    # 실제 분석에서 선택했던 컬럼들
-    df_selected = df[['홈런', '타점', '득점']].copy()
+    df_selected = df[['HR', 'RBI', 'R']].copy()
     return df, df_selected
 
 df, df_selected = load_data()
@@ -42,19 +40,19 @@ df_selected['cluster_k4'] = model_k4.labels_
 # -----------------------------------------------------------------------------
 # 2. 스트림릿 웹 화면 구성
 # -----------------------------------------------------------------------------
-st.title("⚾ AI 기반 KBO 타자 성향 분류 및 감별 시스템")
+st.title("⚾ SaberClustering AI: KBO Batter Style Analysis")
 st.markdown("""
-이 시스템은 머신러닝 알고리즘(K-Means)을 활용하여 프로야구 타자들의 스탯을 바탕으로 플레이 스타일을 스스로 분류하고, 
+이 시스템은 머신러닝 알고리즘(K-Means)을 활용하여 프로야구 타자들의 세이버메트릭스 스탯을 바탕으로 플레이 스타일을 스스로 분류하고, 
 새로운 선수의 성적을 입력했을 때 어떤 성향의 그룹에 속하는지 실시간으로 판별해 줍니다.
 """)
 
-st.sidebar.header("📥 신규 타자 성적 입력")
+st.sidebar.header("📥 Input New Batter Stats")
 st.sidebar.markdown("궁금한 선수의 성적을 입력하거나 시뮬레이션해 보세요.")
 
-# 사이드바 입력창 (사용자가 조절할 수 있는 슬라이더나 입력창 구현)
-hr = st.sidebar.number_input("예상 홈런 수", min_value=0, max_value=60, value=10)
-rbi = st.sidebar.number_input("예상 타점 수", min_value=0, max_value=150, value=40)
-run = st.sidebar.number_input("예상 득점 수", min_value=0, max_value=150, value=35)
+# 사이드바 입력창
+hr = st.sidebar.number_input("예상 홈런 수 (HR)", min_value=0, max_value=60, value=10)
+rbi = st.sidebar.number_input("예상 타점 수 (RBI)", min_value=0, max_value=150, value=40)
+run = st.sidebar.number_input("예상 득점 수 (R)", min_value=0, max_value=150, value=35)
 
 # -----------------------------------------------------------------------------
 # 3. 메인 화면 - 탭 구성 (분석 결과 vs 신규 감별)
@@ -75,37 +73,29 @@ with tab1:
     
     # 교차표(Crosstab) 시각화
     st.subheader("📋 구단별 AI 스타일 그룹 분포 현황")
-    ct = pd.crosstab(model_k4.labels_, df['팀'], rownames=['스타일 그룹(Cluster)'], colnames=['소속 구단'])
+    ct = pd.crosstab(model_k4.labels_, df['Team'], rownames=['Cluster'], colnames=['Team'])
     st.dataframe(ct, use_container_width=True)
 
 with tab2:
     st.header("2. 나만의 가상 타자 스타일 감별 결과")
     
     # 신규 입력 데이터 전처리 및 예측
-    new_player = pd.DataFrame([[hr, rbi, run]], columns=['홈런', '타점', '득점'])
+    new_player = pd.DataFrame([[hr, rbi, run]], columns=['HR', 'RBI', 'R'])
     new_player_scaled = scaler.transform(new_player)
     pred_cluster = model_k4.predict(new_player_scaled)[0]
-    
-    # 그룹별 이름 매핑 (인포그래픽 분석 바탕)
-    cluster_names = {
-        0: "🔴 단타 및 하위 타선 선수군",
-        1: "🟣 작전 및 기동력 중심 선수군",
-        2: "🟢 중거리형 주전 타자군 (민트 영역)",
-        3: "🟡 핵심 거포 및 해결사군 (연두 영역)"
-    }
     
     # 무작위로 매핑될 수 있으므로 예측된 번호와 텍스트 출력
     st.success(f"🎯 AI 분석 결과: 입력하신 성적의 타자는 **[ {pred_cluster}번 스타일 그룹 ]**에 가깝습니다!")
     
     # 산점도 시각화 표현
-    st.subheader("📍 군집 내 신규 타자 위치 확인 (홈런 vs 타점)")
+    st.subheader("📍 군집 내 신규 타자 위치 확인 (HR vs RBI)")
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
     # 기존 선수들 그리기
     scatter = ax.scatter(
-        df_selected['홈런'], 
-        df_selected['타점'], 
+        df_selected['HR'], 
+        df_selected['RBI'], 
         c=model_k4.labels_, 
         cmap='rainbow', 
         s=80, 
@@ -117,13 +107,14 @@ with tab2:
     # 신규 선수 검은 X 그리기
     ax.scatter(hr, rbi, c='black', s=350, marker='X', edgecolors='yellow', linewidth=1.5, label='New Player')
     
-    ax.set_xlabel('홈런 수', fontsize=12, fontweight='bold')
-    ax.set_ylabel('타점', fontsize=12, fontweight='bold')
-    ax.set_title('K-Means 군집 내 신규 타자 위치 확인', fontsize=14, fontweight='bold', pad=15)
+    # 한글 깨짐 방지를 위해 축 이름과 제목을 영문으로 깔끔하게 변경
+    ax.set_xlabel('Home Runs (HR)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Runs Batted In (RBI)', fontsize=12, fontweight='bold')
+    ax.set_title('K-Means Hitter Clustering (K=4)', fontsize=14, fontweight='bold', pad=15)
     ax.grid(True, linestyle='--', alpha=0.3)
     ax.legend(fontsize=11)
     
     # 스트림릿에 plot 표시
     st.pyplot(fig)
     
-    st.info(f"💡 **시각적 분석:** 새로 입력된 타자(X)가 기존 KBO 선수들의 분포 중에서 어느 성향 무리 한복판에 안착했는지 실시간 좌표값으로 증명합니다.")
+    st.info(f"💡 **시각적 분석:** 새로 입력된 타자(X 마커)가 기존 KBO 선수들의 분포 그래프 상에서 어느 위치에 찍히는지 실시간 거리를 확인할 수 있습니다.")
